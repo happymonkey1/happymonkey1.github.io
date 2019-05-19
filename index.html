@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="styles.css">
+    <script src="GeneticAlgorithm.js"></script>
+    <script>
+
+    
+
+    const TILE_WIDTH = 50;
+    
+    //ENEMY
+    const ENEMY_RADIUS = 15;
+    const ENEMY_SPEED = 50;
+
+    //PLAYER
+    const PLAYER_SPEED = 13.5;
+    const PLAYER_WIDTH = TILE_WIDTH - 20;
+    const PLAYER_COLLIDE_HELPER = 7;
+
+    const KEY_CODES = {
+        68: 'right',
+        65: 'left',
+        87: 'up',
+        83: 'down'
+    }
+
+
+    const MAP1_STRING =  " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . S S S . . . . . . . . * # G F F . . ;" +
+                         " . . S P S . * # * # * # * E . F F F . . ;" +
+                         " . . S S S . E * # * # * # * . F F F . . ;" +
+                         " . . S S S . * # * # * # * E . F F F . . ;" +
+                         " . . S S S . E * # * # * # * . F F F . . ;" +
+                         " . . S S S . * # * # * # * E . F F F . . ;" +
+                         " . . S S S N # . . . . . . . . F F F . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;" +
+                         " . . . . . . . . . . . . . . . . . . . . ;";
+
+    const TILES = {
+        bg: { id: "background", color: "lightsteelblue" },
+        start: { id: "start", color: "green" },
+        end: { id: "end", color: "yellow" },
+        goal: { id: "goal", color: "yellow" },
+        node: { id: "node", color: "lightgrey" },
+        ground: { id: "ground", color: "grey" },
+        lightground: { id: "ground", color: "lightgrey" },
+        enemyspawn: { id: "espawn", color: "grey" }
+    }
+
+    function Game() {
+
+
+        this.canvasWidth = 0;
+        this.canvasHeight = 0;
+        this.canvas;
+        this.ctx;
+
+
+        this.centerX;
+        this.centerY;
+
+        this.lastRender = 0;
+        this.player;
+        this.playerFailed = false;
+
+
+        this.currentMap;
+
+        this.fails = 0;
+
+        this.physicsObjects = [];
+
+        this.GA = undefined;
+
+    };
+
+    Game.prototype.init = function () {
+        //init stuff
+
+        this.canvas = document.getElementById("canvas");
+        this.canvasWidth = this.canvas.width;
+        this.canvasHeight = this.canvas.height;
+
+        this.centerX = this.canvasWidth/2;
+        this.centerY = this.canvasHeight/2;
+
+        //GRAPHICS
+        this.ctx = this.canvas.getContext("2d");
+        this.ctx.fillStyle = "red";
+
+
+        //MAP
+        this.currentMap = new Map(20, 15);
+        
+        this.currentMap.mapOffsetX = (this.centerX - TILE_WIDTH*this.currentMap.width/2);
+        this.currentMap.mapOffsetY = (this.centerY - TILE_WIDTH*this.currentMap.height/2);
+
+        this.currentMap.buildMap( MAP1_STRING );
+
+        
+
+        //PLAYER
+        var pX = this.currentMap.playerSpawn.gridX * TILE_WIDTH + (TILE_WIDTH/2) + this.currentMap.mapOffsetX;
+        var pY = this.currentMap.playerSpawn.gridY * TILE_WIDTH + (TILE_WIDTH/2) + this.currentMap.mapOffsetY;
+
+        this.currentMap.playerSpawn.posX = pX;
+        this.currentMap.playerSpawn.posY = pY;
+
+        this.player = new Player(0, 0, PLAYER_WIDTH, PLAYER_WIDTH, PLAYER_SPEED);
+        this.player.init();
+        this.player.spawnPlayer(pX, pY);
+        
+
+        var startPos = { x: pX, y: pY }
+        var goalPos = { x: this.currentMap.goalPos.pos.x, y: this.currentMap.goalPos.pos.y }
+        var nodes = this.currentMap.nodes;
+
+        this.GA = new GeneticAlgorithm(1000, 10, PLAYER_SPEED, PLAYER_WIDTH, startPos, goalPos, nodes);
+        
+
+        //start game loop
+        window.requestAnimationFrame((t) => this.loop(t))
+    };
+
+    Game.prototype.update = function(deltaTime) {
+
+        //do player update
+        this.player.update(deltaTime, this.currentMap);
+        this.GA.updateAgents(deltaTime, this.currentMap);
+        
+
+        var gameOver;
+
+
+        //this.GA.doCrossover();
+
+        for(var i=0; i < this.currentMap.enemies.length; i++) {
+            var enemy = this.currentMap.enemies[i];
+
+
+            enemy.think(deltaTime, this.currentMap);
+
+
+            this.playerFailed = checkCollision(this.player.pos.x, this.player.pos.y, this.player.width, this.player.width,
+                            enemy.pos.x, enemy.pos.y, enemy.radius*2 - PLAYER_COLLIDE_HELPER, enemy.radius*2 - PLAYER_COLLIDE_HELPER);
+
+
+            
+
+            
+
+            if(this.playerFailed || !this.GA.hasMapReset)
+                this.reset();
+
+            if(this.player.reachedFinish || this.GA.agentReachedFinish)
+                this.reset();
+            
+        }
+
+        
+       
+        
+    };
+
+    Game.prototype.render = function () {
+        // Draw the state of the world
+        this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+        this.currentMap.render(this.ctx, this.canvasWidth/2, this.canvasHeight/2 );
+
+        this.GA.renderAgents(this.ctx);
+
+        this.player.render(this.ctx);
+
+        
+
+        //UI
+        this.ctx.fillStyle = "black";
+        this.ctx.font = "30px Arial";
+        this.ctx.fillText("Most Fit Score: " + this.GA.highestFitnessScore, 100, this.canvasHeight - 100);
+        this.ctx.fillText("Most Fit Score For Generation: " + this.GA.bestGenerationFitness, 100, this.canvasHeight - 75);
+        this.ctx.fillText("Player Fails: " + this.fails, 100, this.canvasHeight - 50);
+        this.ctx.fillText("Generation: " + this.GA.currentGeneration, 100, this.canvasHeight - 25);
+        this.ctx.fillText("Total AI moves: " + this.GA.agentProps.maxThinkingIterations, 100, this.canvasHeight);
+        
+        
+    };
+
+    Game.prototype.reset = function () {
+        
+        this.GA.hasMapReset = true;
+        
+        if(this.playerFailed) {
+            this.player.spawnPlayer(this.currentMap.playerSpawn.posX, this.currentMap.playerSpawn.posY);
+            this.fails++;
+            this.playerFailed = false;
+        }
+
+        for(var i=0; i < this.currentMap.enemies.length; i++) {
+            var enemy = this.currentMap.enemies[i];
+
+            enemy.pos.x = enemy.startPos.x;
+            enemy.pos.y = enemy.startPos.y;
+
+        }
+
+    }
+
+    Game.prototype.loop = function (timestamp) {
+       
+        var deltaTime = (timestamp - this.lastRender)/100;
+
+        this.update(deltaTime);
+        this.render();
+
+        this.lastRender = timestamp
+        window.requestAnimationFrame((t) => this.loop(t));
+    };
+
+    Game.prototype.levelFinished = function() {
+        this.reset();
+        this.fails = 0;
+
+
+
+    }
+
+    function Enemy(x, y, r, color, maxSpeed) {
+
+        this.pos = {
+            x: x,
+            y: y
+        }
+
+        this.startPos = { 
+            x: x,
+            y: y
+        }
+
+        this.maxSpeed = maxSpeed;
+        this.vx = 0;
+        this.vy = 0;
+
+        this.color = color;
+
+        this.radius = r
+        this.renderPadding = 3;
+
+
+        this.hadCollision = false;
+
+
+    }
+
+    Enemy.prototype.init = function () {
+
+        this.vx = this.maxSpeed;
+
+
+    }
+
+    Enemy.prototype.think = function(deltaTime, map) {
+        var moveX = this.pos.x + this.radius;
+        var moveY = this.pos.y + this.radius;
+        if(this.vx > 0)
+            moveX = (this.pos.x + this.radius) + this.vx * deltaTime;
+        else if (this.vx < 0)
+            moveX = (this.pos.x - this.radius) + this.vx * deltaTime;
+
+        if(this.vy > 0) 
+            var moveY = (this.pos.y + this.radius) + this.vy * deltaTime;
+        else if (this.vy < 0)
+            var moveY = (this.pos.y - this.radius) + this.vy * deltaTime;
+
+        
+        var moveTileX = Math.floor( (moveX - map.mapOffsetX) / TILE_WIDTH );
+        var moveTileY = Math.floor( (moveY - map.mapOffsetY) / TILE_WIDTH );
+
+        var moveTile = map.map[moveTileY][moveTileX];
+
+        if(moveTile.type == TILES.bg.id || 
+            moveTile.type == TILES.start.id ||
+            moveTile.type == TILES.end.id) {
+            this.vx *= -1;
+            this.vY *= -1;
+        }
+
+        this.pos.x += this.vx * deltaTime;
+        this.pos.y += this.vy * deltaTime;
+    }
+
+    Enemy.prototype.render = function(ctx) {
+
+
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, 2 * Math.PI);
+        ctx.fill();
+
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.pos.x + .5 , this.pos.y , this.radius - this.renderPadding, 0, 2 * Math.PI);
+        ctx.fill();
+
+
+    }
+
+
+    function Player(x, y, width, height, maxSpeed) {
+
+        this.pos = {
+            x: x,
+            y: y
+        }
+
+        this.width = width;
+        this.height = height;
+
+        this.vx = 0;
+        this.vy = 0;
+        this.maxSpeed = maxSpeed;
+
+        this.renderPadding = 5;
+
+        this.visible = false;
+        
+        this.reachedFinish = false;
+
+        this.keysDown = {
+            left: false,
+            right: false,
+            up: false,
+            down: false
+
+
+        };
+        
+
+    }
+    
+
+    Player.prototype.render = function(ctx) {
+
+        if(!this.visible) return;
+
+        ctx.fillStyle = "black";
+
+        ctx.fillRect(this.pos.x - this.width/2, this.pos.y - this.height/2, 
+            this.width, this.height)
+
+        ctx.fillStyle = "orange";
+        
+        ctx.fillRect(this.pos.x - this.width/2 + this.renderPadding, this.pos.y - this.height/2 + this.renderPadding, 
+            this.width - this.renderPadding*2, this.height - this.renderPadding*2)
+    }
+
+    Player.prototype.init = function() {
+
+        window.addEventListener("keydown", (e) => this.keydown(e), false)
+        window.addEventListener("keyup", (e) => this.keyup(e), false)
+
+    }
+
+    Player.prototype.update = function (deltaTime, map) {
+
+        this.vx = 0;
+        this.vy = 0;
+
+        if(this.keysDown.left) 
+            this.vx = -this.maxSpeed;
+
+        if(this.keysDown.right) 
+            this.vx = this.maxSpeed;
+        
+        if(this.keysDown.down) 
+            this.vy = this.maxSpeed;
+
+        if(this.keysDown.up) 
+            this.vy = -this.maxSpeed;
+
+
+        var canMove = this.checkMove(deltaTime, map);
+        if(!canMove) return;
+
+
+        this.pos.x += this.vx * deltaTime;
+        this.pos.y += this.vy * deltaTime;
+    }
+
+    Player.prototype.keydown = function(event) {
+        var key = KEY_CODES[event.keyCode]
+        this.keysDown[key] = true
+    }
+    Player.prototype.keyup = function(event) {
+        var key = KEY_CODES[event.keyCode]
+        this.keysDown[key] = false
+    }
+
+    Player.prototype.checkMove = function(deltaTime, map) {
+        
+        var moveX = this.pos.x;
+        var moveY = this.pos.y;
+
+        if(this.vx > 0)
+            moveX = (this.pos.x + this.width/2) + this.vx * deltaTime;
+        else if(this.vx < 0)
+            moveX = (this.pos.x - this.width/2) + this.vx * deltaTime;
+
+        if(this.vy > 0)
+            moveY = (this.pos.y + this.height/2) + this.vy * deltaTime;
+        else if(this.vy < 0)
+            moveY = (this.pos.y - this.height/2) + this.vy * deltaTime;
+        
+        
+        var checkMove = true;
+        
+        var moveTileX = Math.floor( (moveX - map.mapOffsetX) / TILE_WIDTH );
+
+        var moveTileY = Math.floor( (moveY - map.mapOffsetY) / TILE_WIDTH );
+
+        
+        var moveTile = map.map[moveTileY][moveTileX];
+        
+
+        if(moveTile.type == TILES.bg.id) {
+            checkMove = false;
+        }else if(moveTile.type == TILES.end.id) {
+            this.reachedFinish = true;
+        }else {
+            checkMove = true;
+        }
+
+        /*for(var i=0; i < map.edges.length; i++) {
+            var edge = map.edges[i];
+            
+            var bool = checkCollision(this.pos.x + moveX, this.pos.y + moveY, this.width, this.height, edge.pos.x, edge.pos.y, edge.width, edge.height);
+            
+            if(bool) checkMove = false;
+            
+
+        }*/
+
+        return checkMove;
+
+    }
+
+
+    Player.prototype.spawnPlayer = function(x, y) {
+        this.pos.x = x;
+        this.pos.y = y;
+
+        this.visible = true;
+        this.reachedFinish = false;
+    }
+
+    function checkCollision(obj1X, obj1Y, obj1Width, obj1Height, obj2X, obj2Y, obj2Width, obj2Height) {
+        if (obj1X < obj2X + obj2Width &&
+            obj1X + obj1Width > obj2X &&
+            obj1Y < obj2Y + obj2Height &&
+            obj1Y + obj1Height > obj2Y) {
+                return true
+        }
+    }
+
+    function checkBounds(checkX, checkY, minX, minY, maxX, maxY) {
+
+        var bool = false;
+
+        if(checkX > minX && checkX < maxX && checkY > minY && checkY < maxY) bool = true;
+        
+
+        return bool;
+
+    }
+
+    function Tile(x, y, width, type, color) {
+
+        this.gridX = x;
+        this.gridY = y;
+        this.width = width;
+
+        this.type = type;
+        this.color = color;
+
+    }
+
+    function Map(w, h) {
+
+        this.width = w;
+        this.height = h;
+
+        this.mapOffsetX = undefined;
+        this.mapOffsetY = undefined;
+
+        this.edgeWidth = 4;
+
+        this.edgeColor = "black";
+
+        this.map = [];
+        this.edges = [];
+
+        this.playerSpawn = { 
+            gridX: undefined,
+            gridY: undefined,
+            posX: undefined,
+            posY: undefined
+        };
+
+        this.goalPos = { pos: { x: undefined, y: undefined } };
+        this.nodes = [];
+
+        this.pos = {
+            x: undefined, 
+            y: undefined
+        }
+
+        for(var y=0; y < this.height; y++) {
+            var colArray = [];
+            this.map.push(colArray);
+
+            for (var x=0; x < this.width; x++) {
+
+                var tile = new Tile(x, y, TILE_WIDTH, TILES.bg.id, TILES.bg.color);
+                this.map[y][x] = tile;
+
+
+            }
+        }
+
+        this.enemies = [];
+
+        
+
+
+        
+    }
+
+    Map.prototype.buildEdges = function() {
+
+        for(var row=0; row < this.height; row++) {
+            for (var col=0; col < this.width; col++) {
+
+                
+                var tile = this.map[row][col];
+                
+                if(tile.type == TILES.bg.id) continue;
+
+                for(y = -1; y <= 1; y++) {
+                    for(x = -1; x <= 1; x++) {
+
+
+                        //corners dont matter
+                        if( (x == -1 && y == -1) || (x == 1 && y == 1) || (x == 1 && y == -1) || (x == -1 && y == 1) ) continue;
+
+                        var checkX = col + x;
+                        var checkY = row + y;
+
+                        var bool = checkBounds(checkX, checkY, 0, 0, this.width, this.height);
+                        if(bool) {
+                            var checkTile = this.map[checkY][checkX];   
+                            if(checkTile.type == TILES.bg.id) {
+
+                                var px = this.mapOffsetX + (tile.gridX * TILE_WIDTH);
+                                var py = this.mapOffsetY + (tile.gridY * TILE_WIDTH);
+                                var edge;
+
+                                if(x == 1 || x == -1) {
+
+                                    if(x == 1) {
+                                        px += (TILE_WIDTH);
+                                    }
+
+                                    edge = {
+                                        pos: { x: px, y: py },
+                                        width: this.edgeWidth,
+                                        height: TILE_WIDTH + this.edgeWidth
+                                    }
+                                }else {
+                                    if(y == 1)
+                                        py += (TILE_WIDTH);
+
+                                    edge = {
+                                        pos: { x: px, y: py },
+                                        width: TILE_WIDTH,
+                                        height: this.edgeWidth
+                                    }
+                                }
+
+                                this.edges.push(edge);
+
+
+                            }
+                        }
+
+                    }
+                }
+
+
+
+            }
+        }
+
+    }     
+
+    Map.prototype.buildMap = function (mapString) {
+        var mapStringIndex = 0;
+        var x = 0;
+        var y = 0;
+
+        for(;;) {
+            var char = mapString.charAt(mapStringIndex++);
+            var tile;
+
+            switch (char)  {
+                case 'S': 
+                    this.map[y][x].type = TILES.start.id;
+                    this.map[y][x++].color = TILES.start.color;
+
+                    break;
+                case 'E':
+                    
+                    var eX = this.mapOffsetX + (x * TILE_WIDTH) + TILE_WIDTH/2;
+                    var eY = this.mapOffsetY + (y * TILE_WIDTH) + TILE_WIDTH/2;
+                    var enemy = new Enemy(eX, eY, ENEMY_RADIUS, "blue", ENEMY_SPEED);
+                    enemy.init();
+                
+                    this.map[y][x].type = TILES.enemyspawn.id;
+                    this.map[y][x++].color = TILES.enemyspawn.color;
+
+                    
+
+
+                    this.enemies.push(enemy);
+                    
+                    break;
+                case 'G':
+
+                    this.goalPos.pos.x = this.mapOffsetX + (x * TILE_WIDTH) + TILE_WIDTH/2;
+                    this.goalPos.pos.y = this.mapOffsetY + (y * TILE_WIDTH) + TILE_WIDTH/2;
+
+
+                    this.map[y][x].type = TILES.goal.id;
+                    this.map[y][x++].color = TILES.goal.color;
+
+
+                    break;
+                case 'N':
+
+                    var pos = {
+                        x: this.mapOffsetX + (x * TILE_WIDTH) + TILE_WIDTH/2,
+                        y: this.mapOffsetY + (y * TILE_WIDTH) + TILE_WIDTH/2
+                    }
+                    var node = new Node(pos, false);
+
+                    this.nodes.push(node);
+                    
+                    this.map[y][x].type = TILES.node.id;
+                    this.map[y][x++].color = TILES.node.color;
+
+
+                    break;
+                case 'F':
+                    this.map[y][x].type = TILES.end.id;
+                    this.map[y][x++].color = TILES.end.color;
+                    
+                    break;
+                case '.':
+                    this.map[y][x].type = TILES.bg.id;
+                    this.map[y][x++].color = TILES.bg.color;
+                    
+                    break;
+
+                case '#':
+                    this.map[y][x].type = TILES.ground.id;
+                    this.map[y][x++].color = TILES.ground.color;
+                    break;
+
+                case 'P':
+                    this.playerSpawn.gridX = x;
+                    this.playerSpawn.gridY = y;
+                    
+                    this.map[y][x].type = TILES.start.id;
+                    this.map[y][x++].color = TILES.start.color;
+                    
+                    break;
+                case '*':
+                    this.map[y][x].type = TILES.lightground.id;
+                    this.map[y][x++].color = TILES.lightground.color;
+                    break;
+
+                case ';':
+                    x= 0; 
+                    y++;
+                    break;
+
+            }
+
+            if(mapStringIndex > mapString.length) {
+
+                for(var i=0; i < this.nodes.length; i++) {
+                    this.nodes[i].calcDistToGoal(this.goalPos);
+                }
+                
+                this.buildEdges();
+                return;
+            }
+
+
+            
+
+        }
+
+    }
+
+
+    
+
+    Map.prototype.render = function(ctx, centerX, centerY) {
+        for(var y=0; y < this.height; y++) {
+            for (var x=0; x < this.width; x++) {
+
+                var tile = this.map[y][x];
+
+                ctx.fillStyle = tile.color;
+
+                
+
+                                //centers map on canvas   +   //tile pos * its width
+                var posX = (centerX - TILE_WIDTH*this.width/2) + (tile.gridX * tile.width);
+                var posY = (centerY - TILE_WIDTH*this.height/2) + (tile.gridY * tile.width);
+
+                if(x == 0 && y == 0) {
+
+                    this.pos.x = posX;
+                    this.pos.y = posY;
+
+                    
+
+                }
+                ctx.fillRect(posX,posY, tile.width, tile.width);
+
+
+
+            }
+        }
+        for(var i=0; i < this.edges.length; i++) {
+            
+            var edge = this.edges[i];
+
+            ctx.fillStyle = "black";
+            ctx.fillRect(edge.pos.x - this.edgeWidth/2, edge.pos.y - this.edgeWidth/2, edge.width, edge.height);
+
+
+        }
+
+        for(var i=0; i < this.enemies.length; i++) {
+            var enemy = this.enemies[i];
+            enemy.render(ctx);
+        }
+
+        
+        
+
+
+    }
+    
+    
+    
+    var game;
+    window.addEventListener('load', function() {
+        
+        game = new Game();
+
+        
+        
+        game.init();
+    })
+
+
+    
+    
+    
+    </script>
+
+</head>
+
+<h1><strong>HTML5 Canvas</strong> - Native API</h1>
+
+<canvas id="canvas" width="1600" height="900"></canvas>
+
+<body>
+</body>
+</html>
